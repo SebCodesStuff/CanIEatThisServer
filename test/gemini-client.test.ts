@@ -50,9 +50,14 @@ describe("createGeminiClient", () => {
       throw new Error("expected a fetch call");
     }
     expect(url).toBe(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=test-key",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
     );
+    expect(url).not.toContain("key=");
     expect(init.method).toBe("POST");
+    expect(init.headers).toMatchObject({
+      "content-type": "application/json",
+      "x-goog-api-key": "test-key",
+    });
     const body = JSON.parse(String(init.body));
     expect(body.contents[0].parts[0].text).toBe(FOOD_IDENTIFY_PROMPT);
     expect(body.contents[0].parts[1].inlineData).toEqual({

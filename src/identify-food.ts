@@ -1,6 +1,6 @@
 export const FOOD_IDENTIFY_PROMPT = `You identify food in a photo.
 
-Return one entry per distinct food. When a brand, product line, or variant is printed on the package or is unmistakable, include those visible words. A specific name such as "Quaker Oats Protein oatmeal" is better than "oatmeal".
+When a brand, product line, or variant is printed on the package or is unmistakable, include those visible words. A specific name such as "Quaker Oats Protein oatmeal" is better than "oatmeal".
 
 Never guess a brand, product line, or variant. If it is not visible, set that field to null.
 

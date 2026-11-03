@@ -22,10 +22,13 @@ export function createGeminiClient(options: {
 
   return {
     async identify(image) {
-      const url = `${GEMINI_ENDPOINT}/${encodeURIComponent(options.model)}:generateContent?key=${encodeURIComponent(options.apiKey)}`;
+      const url = `${GEMINI_ENDPOINT}/${encodeURIComponent(options.model)}:generateContent`;
       const response = await fetchImpl(url, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-goog-api-key": options.apiKey,
+        },
         body: JSON.stringify({
           contents: [
             {
