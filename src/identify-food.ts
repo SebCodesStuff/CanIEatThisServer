@@ -6,7 +6,9 @@ Never guess a brand, product line, or variant. If it is not visible, set that fi
 
 Always set genericName to the everyday food name, such as "oatmeal", even when a brand is visible.
 
-Set confidence to high when the label is clearly readable, medium when the food is recognizable but the label is partial, and low when you are unsure.`;
+Set confidence to high when the label is clearly readable, medium when the food is recognizable but the label is partial, and low when you are unsure.
+
+Return one entry per food.`;
 
 const CONFIDENCE_LEVELS = ["high", "medium", "low"] as const;
 

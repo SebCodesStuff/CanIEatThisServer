@@ -9,6 +9,7 @@ export type { ModelFood };
 
 export type FoodVision = {
   identify(image: { bytes: Uint8Array; mimeType: string }): Promise<{ foods: ModelFood[] }>;
+  calories(foods: ModelFood[]): Promise<number[]>;
 };
 
 export function createApp(deps: { vision: FoodVision }) {
@@ -47,8 +48,24 @@ export function createApp(deps: { vision: FoodVision }) {
         bytes: optimized.bytes,
         mimeType: optimized.mimeType,
       });
-      return c.json({ foods: model.foods.map((food) => toFoodItem(food)) });
-    } catch {
+      const foods = model.foods.map((food) => toFoodItem(food));
+      if (foods.length === 0) {
+        return c.json({ error: "no food found" }, 422);
+      }
+      const identified = foods.map((food) => ({
+        brand: food.brand,
+        product: food.product,
+        variant: food.variant,
+        genericName: food.genericName,
+        confidence: food.confidence,
+      }));
+      const perServing = await deps.vision.calories(identified);
+      const calories = perServing.reduce((total, value) => total + value, 0);
+      return c.json({ foods, calories });
+    } catch (error) {
+      if (error instanceof Error && error.message === "calorie estimate failed") {
+        return c.json({ error: "calorie estimate failed" }, 502);
+      }
       return c.json({ error: "food identification failed" }, 502);
     }
   });

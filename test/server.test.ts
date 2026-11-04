@@ -37,6 +37,9 @@ describe("server config", () => {
         async identify() {
           return { foods: [] };
         },
+        async calories() {
+          return [];
+        },
       },
     });
 
