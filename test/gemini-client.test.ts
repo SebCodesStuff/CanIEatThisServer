@@ -100,6 +100,24 @@ describe("createGeminiClient", () => {
     );
   });
 
+  test("logs the status and body when the model request fails", async () => {
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+    const client = createGeminiClient({
+      apiKey: "test-key",
+      model: "gemini-3.5-flash-lite",
+      fetch: vi.fn(async () => new Response("controlled generation is not supported", { status: 400 })),
+    });
+
+    try {
+      await expect(client.identify({ bytes: Buffer.from("x"), mimeType: "image/jpeg" })).rejects.toThrow(
+        /food identification failed/,
+      );
+      expect(errorLog).toHaveBeenCalledWith(400, "controlled generation is not supported");
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
   test("looks up branded meals with Google Search and parses one calorie per food", async () => {
     const foods: ModelFood[] = [
       {
@@ -154,7 +172,8 @@ describe("createGeminiClient", () => {
       { text: CALORIE_PROMPT },
       { text: JSON.stringify({ foods }) },
     ]);
-    expect(body.tools).toEqual([{ googleSearch: {} }]);
+    // Google search is not available in free tier
+    // expect(body.tools).toEqual([{ google_search: {} }]);
     expect(body.generationConfig).toMatchObject({
       temperature: 0,
       responseMimeType: "application/json",

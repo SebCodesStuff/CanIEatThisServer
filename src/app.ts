@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { toFoodItem, type ModelFood } from "./identify-food.js";
+import { FoodItem, toFoodItem, type ModelFood } from "./identify-food.js";
 import { optimizeImage } from "./optimize-image.js";
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
@@ -49,7 +49,7 @@ export function createApp(deps: { vision: FoodVision }) {
         mimeType: optimized.mimeType,
       });
       const foods = model.foods.map((food) => toFoodItem(food));
-      if (foods.length === 0) {
+    if (foods.length === 0) {
         return c.json({ error: "no food found" }, 422);
       }
       const identified = foods.map((food) => ({
@@ -64,7 +64,7 @@ export function createApp(deps: { vision: FoodVision }) {
       return c.json({ foods, calories });
     } catch (error) {
       if (error instanceof Error && error.message === "calorie estimate failed") {
-        return c.json({ error: "calorie estimate failed" }, 502);
+        return c.json({ error: error.message }, 502);
       }
       return c.json({ error: "food identification failed" }, 502);
     }

@@ -66,7 +66,8 @@ export function createGeminiClient(options: {
               parts: [{ text: CALORIE_PROMPT }, { text: JSON.stringify({ foods }) }],
             },
           ],
-          ...(foods.some(hasBrand) ? { tools: [{ googleSearch: {} }] } : {}),
+          // Google search is not available in free tier
+          // ...(foods.some(hasBrand) ? { tools: [{ google_search: {} }] } : {}),
           generationConfig: {
             temperature: 0,
             responseMimeType: "application/json",
@@ -74,7 +75,7 @@ export function createGeminiClient(options: {
             thinkingConfig: thinkingConfig(options.model),
           },
         },
-        "calorie estimate failed",
+        "CLIENT: calorie estimate failed",
       );
       return parseCalories(parsed, foods.length);
     },
@@ -98,6 +99,8 @@ async function requestModel(
   });
 
   if (!response.ok) {
+    const detail = await response.text();
+    console.error(response.status, detail);
     throw new Error(failure);
   }
 
