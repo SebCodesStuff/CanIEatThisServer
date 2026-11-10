@@ -4,13 +4,25 @@ import { createApp, type FoodVision, type ModelFood } from "../src/app.js";
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
-function visionReturning(foods: ModelFood[]): FoodVision & { calls: Array<{ bytes: Uint8Array; mimeType: string }> } {
+function visionReturning(
+  foods: ModelFood[],
+  perFoodCalories: number[] = [],
+): FoodVision & {
+  calls: Array<{ bytes: Uint8Array; mimeType: string }>;
+  calorieCalls: ModelFood[][];
+} {
   const calls: Array<{ bytes: Uint8Array; mimeType: string }> = [];
+  const calorieCalls: ModelFood[][] = [];
   return {
     calls,
+    calorieCalls,
     async identify(image) {
       calls.push(image);
       return { foods };
+    },
+    async calories(identified) {
+      calorieCalls.push(identified);
+      return perFoodCalories;
     },
   };
 }
@@ -72,7 +84,18 @@ describe("POST /identify", () => {
   });
 
   test("sends the optimized jpeg to the vision client, not the original upload", async () => {
-    const vision = visionReturning([]);
+    const vision = visionReturning(
+      [
+        {
+          brand: null,
+          product: null,
+          variant: null,
+          genericName: "apple",
+          confidence: "high",
+        },
+      ],
+      [95],
+    );
     const app = createApp({ vision });
     const png = await sharp({
       create: { width: 2000, height: 1000, channels: 3, background: { r: 12, g: 80, b: 40 } },
@@ -94,8 +117,8 @@ describe("POST /identify", () => {
   });
 
   test("names a labeled package from brand, product, and variant", async () => {
-    const app = createApp({
-      vision: visionReturning([
+    const vision = visionReturning(
+      [
         {
           brand: "Quaker",
           product: "Oats Protein",
@@ -103,8 +126,10 @@ describe("POST /identify", () => {
           genericName: "oatmeal",
           confidence: "high",
         },
-      ]),
-    });
+      ],
+      [160],
+    );
+    const app = createApp({ vision });
     const jpeg = await sharp({
       create: { width: 64, height: 64, channels: 3, background: { r: 1, g: 2, b: 3 } },
     })
@@ -125,12 +150,24 @@ describe("POST /identify", () => {
           confidence: "high",
         },
       ],
+      calories: 160,
     });
+    expect(vision.calorieCalls).toEqual([
+      [
+        {
+          brand: "Quaker",
+          product: "Oats Protein",
+          variant: "oatmeal",
+          genericName: "oatmeal",
+          confidence: "high",
+        },
+      ],
+    ]);
   });
 
   test("uses the generic name when no brand is visible", async () => {
-    const app = createApp({
-      vision: visionReturning([
+    const vision = visionReturning(
+      [
         {
           brand: "  ",
           product: "Oats Protein",
@@ -138,8 +175,10 @@ describe("POST /identify", () => {
           genericName: "oatmeal",
           confidence: "medium",
         },
-      ]),
-    });
+      ],
+      [150],
+    );
+    const app = createApp({ vision });
     const jpeg = await sharp({
       create: { width: 64, height: 64, channels: 3, background: { r: 1, g: 2, b: 3 } },
     })
@@ -160,12 +199,24 @@ describe("POST /identify", () => {
           confidence: "medium",
         },
       ],
+      calories: 150,
     });
+    expect(vision.calorieCalls).toEqual([
+      [
+        {
+          brand: null,
+          product: null,
+          variant: null,
+          genericName: "oatmeal",
+          confidence: "medium",
+        },
+      ],
+    ]);
   });
 
   test("returns one entry per food", async () => {
-    const app = createApp({
-      vision: visionReturning([
+    const vision = visionReturning(
+      [
         {
           brand: null,
           product: null,
@@ -180,8 +231,10 @@ describe("POST /identify", () => {
           genericName: "yogurt",
           confidence: "medium",
         },
-      ]),
-    });
+      ],
+      [95, 140],
+    );
+    const app = createApp({ vision });
     const jpeg = await sharp({
       create: { width: 64, height: 64, channels: 3, background: { r: 4, g: 5, b: 6 } },
     })
@@ -210,7 +263,76 @@ describe("POST /identify", () => {
           confidence: "medium",
         },
       ],
+      calories: 235,
     });
+    expect(vision.calorieCalls).toEqual([
+      [
+        {
+          brand: null,
+          product: null,
+          variant: null,
+          genericName: "apple",
+          confidence: "high",
+        },
+        {
+          brand: "Chobani",
+          product: null,
+          variant: "vanilla",
+          genericName: "yogurt",
+          confidence: "medium",
+        },
+      ],
+    ]);
+  });
+
+  test("returns 422 and does not estimate calories when no food is identified", async () => {
+    const vision = visionReturning([]);
+    const app = createApp({ vision });
+    const jpeg = await sharp({
+      create: { width: 32, height: 32, channels: 3, background: { r: 7, g: 7, b: 7 } },
+    })
+      .jpeg()
+      .toBuffer();
+
+    const response = await postImage(app, jpeg, "image/jpeg", "empty.jpg");
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toEqual({ error: "no food found" });
+    expect(vision.calls).toHaveLength(1);
+    expect(vision.calorieCalls).toHaveLength(0);
+  });
+
+  test("returns 502 when the calorie estimate fails", async () => {
+    const app = createApp({
+      vision: {
+        async identify() {
+          return {
+            foods: [
+              {
+                brand: null,
+                product: null,
+                variant: null,
+                genericName: "apple",
+                confidence: "high",
+              },
+            ],
+          };
+        },
+        async calories() {
+          throw new Error("calorie estimate failed");
+        },
+      },
+    });
+    const jpeg = await sharp({
+      create: { width: 32, height: 32, channels: 3, background: { r: 8, g: 8, b: 8 } },
+    })
+      .jpeg()
+      .toBuffer();
+
+    const response = await postImage(app, jpeg, "image/jpeg", "calories.jpg");
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({ error: "calorie estimate failed" });
   });
 
   test("returns 502 when the vision client fails", async () => {
@@ -218,6 +340,9 @@ describe("POST /identify", () => {
       vision: {
         async identify() {
           throw new Error("upstream down");
+        },
+        async calories() {
+          throw new Error("calorie estimate failed");
         },
       },
     });

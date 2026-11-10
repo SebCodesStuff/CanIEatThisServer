@@ -19,6 +19,7 @@
   "dependencies": {
     "@hono/node-server": "^2.1.5",
     "hono": "^4.13.14",
+    "hono-rate-limiter": "^0.5.4",
     "sharp": "^0.35.5"
   }
 }

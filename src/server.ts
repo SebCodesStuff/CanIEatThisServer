@@ -6,12 +6,16 @@ import { createGeminiClient } from "./gemini-client.js";
 
 const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 const HOSTNAME = "127.0.0.1" as const;
+const DEFAULT_RATE_LIMIT_PER_HOUR = 10;
 
 export type ServerConfig = {
   apiKey: string;
   model: string;
   port: number;
   hostname: typeof HOSTNAME;
+  rateLimitPerHour: number;
+  rateLimitEnabled: boolean;
+  corsOrigins: string[];
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv): ServerConfig {
@@ -26,20 +30,50 @@ export function loadConfig(env: NodeJS.ProcessEnv): ServerConfig {
     throw new Error("PORT must be an integer from 0 to 65535");
   }
 
+  const rateText = env.RATE_LIMIT_PER_HOUR?.trim() ?? "";
+  const rateLimitPerHour = rateText === "" ? DEFAULT_RATE_LIMIT_PER_HOUR : Number(rateText);
+  if (!Number.isInteger(rateLimitPerHour) || rateLimitPerHour < 1) {
+    throw new Error("RATE_LIMIT_PER_HOUR must be a positive integer");
+  }
+
+  const corsOrigins = (env.CORS_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+
   return {
     apiKey,
     model: env.GEMINI_MODEL?.trim() || DEFAULT_MODEL,
     port,
     hostname: HOSTNAME,
+    rateLimitPerHour,
+    rateLimitEnabled: env.MODE !== "DEV",
+    corsOrigins,
   };
 }
 
-export function startServer(options: { port: number; vision: FoodVision }): Promise<{
+export function startServer(options: {
+  port: number;
+  vision: FoodVision;
+  rateLimitPerHour?: number;
+  rateLimitEnabled?: boolean;
+  corsOrigins?: string[];
+}): Promise<{
   hostname: string;
   port: number;
   close: () => Promise<void>;
 }> {
-  const app = createApp({ vision: options.vision });
+  const app = createApp({
+    vision: options.vision,
+    rateLimit:
+      options.rateLimitEnabled === false
+        ? false
+        : {
+            limit: options.rateLimitPerHour ?? DEFAULT_RATE_LIMIT_PER_HOUR,
+            windowMs: 60 * 60 * 1000,
+          },
+    corsOrigins: options.corsOrigins,
+  });
   return new Promise((resolve, reject) => {
     const server = serve(
       {
@@ -85,7 +119,13 @@ if (isDirectRun()) {
   }
   const config = loadConfig(process.env);
   const vision = createGeminiClient({ apiKey: config.apiKey, model: config.model });
-  startServer({ port: config.port, vision }).then((running) => {
+  startServer({
+    port: config.port,
+    vision,
+    rateLimitPerHour: config.rateLimitPerHour,
+    rateLimitEnabled: config.rateLimitEnabled,
+    corsOrigins: config.corsOrigins,
+  }).then((running) => {
     console.log(`listening on http://${running.hostname}:${running.port}`);
   });
 }

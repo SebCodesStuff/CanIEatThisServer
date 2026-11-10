@@ -1,5 +1,7 @@
-import { Hono } from "hono";
-import { toFoodItem, type ModelFood } from "./identify-food.js";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
+import { cors } from "hono/cors";
+import { rateLimiter } from "hono-rate-limiter";
+import { FoodItem, toFoodItem, type ModelFood } from "./identify-food.js";
 import { optimizeImage } from "./optimize-image.js";
 
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
@@ -9,12 +11,35 @@ export type { ModelFood };
 
 export type FoodVision = {
   identify(image: { bytes: Uint8Array; mimeType: string }): Promise<{ foods: ModelFood[] }>;
+  calories(foods: ModelFood[]): Promise<number[]>;
 };
 
-export function createApp(deps: { vision: FoodVision }) {
-  const app = new Hono();
+export type RateLimit = { limit: number; windowMs: number };
 
-  app.post("/identify", async (c) => {
+const DEFAULT_RATE_LIMIT: RateLimit = { limit: 10, windowMs: 60 * 60 * 1000 };
+
+export function createApp(deps: {
+  vision: FoodVision;
+  rateLimit?: RateLimit | false;
+  corsOrigins?: string[];
+}) {
+  const app = new Hono();
+  const rateLimit = deps.rateLimit ?? DEFAULT_RATE_LIMIT;
+
+  app.use("*", cors({ origin: deps.corsOrigins ?? [], allowMethods: ["POST"] }));
+
+  const limitPerClient: MiddlewareHandler =
+    rateLimit === false
+      ? (_c, next) => next()
+      : rateLimiter({
+          windowMs: rateLimit.windowMs,
+          limit: rateLimit.limit,
+          standardHeaders: "draft-6",
+          keyGenerator: clientIp,
+          message: { error: "too many requests" },
+        });
+
+  app.post("/identify", limitPerClient, async (c) => {
     const body = await c.req.parseBody();
     const image = body["image"];
     if (!isUploadedFile(image)) {
@@ -47,13 +72,36 @@ export function createApp(deps: { vision: FoodVision }) {
         bytes: optimized.bytes,
         mimeType: optimized.mimeType,
       });
-      return c.json({ foods: model.foods.map((food) => toFoodItem(food)) });
-    } catch {
+      const foods = model.foods.map((food) => toFoodItem(food));
+    if (foods.length === 0) {
+        return c.json({ error: "no food found" }, 422);
+      }
+      const identified = foods.map((food) => ({
+        brand: food.brand,
+        product: food.product,
+        variant: food.variant,
+        genericName: food.genericName,
+        confidence: food.confidence,
+      }));
+      const perServing = await deps.vision.calories(identified);
+      const calories = perServing.reduce((total, value) => total + value, 0);
+      return c.json({ foods, calories });
+    } catch (error) {
+      if (error instanceof Error && error.message === "calorie estimate failed") {
+        return c.json({ error: error.message }, 502);
+      }
       return c.json({ error: "food identification failed" }, 502);
     }
   });
 
   return app;
+}
+
+// Clients can prepend arbitrary X-Forwarded-For entries; only the last one is added by the proxy.
+function clientIp(c: Context): string {
+  const forwarded = c.req.header("x-forwarded-for");
+  const last = forwarded?.split(",").pop()?.trim();
+  return last || "unknown";
 }
 
 function isUploadedFile(value: unknown): value is File {

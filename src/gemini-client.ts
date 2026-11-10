@@ -1,4 +1,5 @@
 import type { FoodVision } from "./app.js";
+import { CALORIE_PROMPT, CALORIE_RESPONSE_SCHEMA, parseCalories } from "./calories.js";
 import { FOOD_IDENTIFY_PROMPT, FOOD_RESPONSE_SCHEMA, type ModelFood } from "./identify-food.js";
 
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -22,14 +23,10 @@ export function createGeminiClient(options: {
 
   return {
     async identify(image) {
-      const url = `${GEMINI_ENDPOINT}/${encodeURIComponent(options.model)}:generateContent`;
-      const response = await fetchImpl(url, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-goog-api-key": options.apiKey,
-        },
-        body: JSON.stringify({
+      const parsed = await requestModel(
+        fetchImpl,
+        options,
+        {
           contents: [
             {
               parts: [
@@ -49,35 +46,78 @@ export function createGeminiClient(options: {
             responseSchema: FOOD_RESPONSE_SCHEMA,
             thinkingConfig: thinkingConfig(options.model),
           },
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("food identification failed");
-      }
-
-      const payload = (await response.json()) as GenerateContentResponse;
-      const text = (payload.candidates?.[0]?.content?.parts ?? [])
-        .filter((part) => part.text && !part.thought)
-        .map((part) => part.text)
-        .join("");
-      if (!text) {
-        throw new Error("food identification failed");
-      }
-
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        throw new Error("food identification failed");
-      }
+        },
+        "food identification failed",
+      );
 
       if (!isFoodList(parsed)) {
         throw new Error("food identification failed");
       }
       return parsed;
     },
+
+    async calories(foods) {
+      const parsed = await requestModel(
+        fetchImpl,
+        options,
+        {
+          contents: [
+            {
+              parts: [{ text: CALORIE_PROMPT }, { text: JSON.stringify({ foods }) }],
+            },
+          ],
+          // Google search is not available in free tier
+          // ...(foods.some(hasBrand) ? { tools: [{ google_search: {} }] } : {}),
+          generationConfig: {
+            temperature: 0,
+            responseMimeType: "application/json",
+            responseSchema: CALORIE_RESPONSE_SCHEMA,
+            thinkingConfig: thinkingConfig(options.model),
+          },
+        },
+        "CLIENT: calorie estimate failed",
+      );
+      return parseCalories(parsed, foods.length);
+    },
   };
+}
+
+async function requestModel(
+  fetchImpl: GeminiFetch,
+  options: { apiKey: string; model: string },
+  body: unknown,
+  failure: string,
+): Promise<unknown> {
+  const url = `${GEMINI_ENDPOINT}/${encodeURIComponent(options.model)}:generateContent`;
+  const response = await fetchImpl(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-goog-api-key": options.apiKey,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    console.error(response.status, detail);
+    throw new Error(failure);
+  }
+
+  const payload = (await response.json()) as GenerateContentResponse;
+  const text = (payload.candidates?.[0]?.content?.parts ?? [])
+    .filter((part) => part.text && !part.thought)
+    .map((part) => part.text)
+    .join("");
+  if (!text) {
+    throw new Error(failure);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(failure);
+  }
 }
 
 function thinkingConfig(model: string): { thinkingBudget: 0 } | { thinkingLevel: "minimal" } {
@@ -85,6 +125,10 @@ function thinkingConfig(model: string): { thinkingBudget: 0 } | { thinkingLevel:
     return { thinkingBudget: 0 };
   }
   return { thinkingLevel: "minimal" };
+}
+
+function hasBrand(food: ModelFood): boolean {
+  return typeof food.brand === "string" && food.brand.trim().length > 0;
 }
 
 function isFoodList(value: unknown): value is { foods: ModelFood[] } {
