@@ -47,6 +47,14 @@ describe("POST /identify rate limit", () => {
     expect((await postFrom(app, "2.2.2.2, 203.0.113.1")).status).toBe(429);
   });
 
+  test("never returns 429 when rate limiting is disabled", async () => {
+    const app = createApp({ vision, rateLimit: false });
+
+    for (let i = 0; i < 20; i++) {
+      expect((await postFrom(app, "203.0.113.1")).status).toBe(400);
+    }
+  });
+
   test("allows the client again after the window passes", async () => {
     const app = createApp({ vision, rateLimit: { limit: 1, windowMs: 50 } });
 

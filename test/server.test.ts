@@ -13,8 +13,18 @@ describe("server config", () => {
       port: 3000,
       hostname: "127.0.0.1",
       rateLimitPerHour: 10,
+      rateLimitEnabled: true,
       corsOrigins: [],
     });
+  });
+
+  test("disables rate limiting when MODE is DEV", () => {
+    expect(loadConfig({ GEMINI_API_KEY: "key", MODE: "DEV" }).rateLimitEnabled).toBe(false);
+  });
+
+  test("keeps rate limiting on for any other MODE", () => {
+    expect(loadConfig({ GEMINI_API_KEY: "key", MODE: "PROD" }).rateLimitEnabled).toBe(true);
+    expect(loadConfig({ GEMINI_API_KEY: "key", MODE: "dev" }).rateLimitEnabled).toBe(true);
   });
 
   test("reads the model, port, rate limit, and CORS origins from the environment", () => {
@@ -32,6 +42,7 @@ describe("server config", () => {
       port: 4010,
       hostname: "127.0.0.1",
       rateLimitPerHour: 25,
+      rateLimitEnabled: true,
       corsOrigins: ["https://sebastian.dev", "http://localhost:5173"],
     });
   });

@@ -14,6 +14,7 @@ export type ServerConfig = {
   port: number;
   hostname: typeof HOSTNAME;
   rateLimitPerHour: number;
+  rateLimitEnabled: boolean;
   corsOrigins: string[];
 };
 
@@ -46,6 +47,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): ServerConfig {
     port,
     hostname: HOSTNAME,
     rateLimitPerHour,
+    rateLimitEnabled: env.MODE !== "DEV",
     corsOrigins,
   };
 }
@@ -54,6 +56,7 @@ export function startServer(options: {
   port: number;
   vision: FoodVision;
   rateLimitPerHour?: number;
+  rateLimitEnabled?: boolean;
   corsOrigins?: string[];
 }): Promise<{
   hostname: string;
@@ -62,10 +65,13 @@ export function startServer(options: {
 }> {
   const app = createApp({
     vision: options.vision,
-    rateLimit: {
-      limit: options.rateLimitPerHour ?? DEFAULT_RATE_LIMIT_PER_HOUR,
-      windowMs: 60 * 60 * 1000,
-    },
+    rateLimit:
+      options.rateLimitEnabled === false
+        ? false
+        : {
+            limit: options.rateLimitPerHour ?? DEFAULT_RATE_LIMIT_PER_HOUR,
+            windowMs: 60 * 60 * 1000,
+          },
     corsOrigins: options.corsOrigins,
   });
   return new Promise((resolve, reject) => {
@@ -117,6 +123,7 @@ if (isDirectRun()) {
     port: config.port,
     vision,
     rateLimitPerHour: config.rateLimitPerHour,
+    rateLimitEnabled: config.rateLimitEnabled,
     corsOrigins: config.corsOrigins,
   }).then((running) => {
     console.log(`listening on http://${running.hostname}:${running.port}`);

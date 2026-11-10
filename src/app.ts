@@ -1,4 +1,4 @@
-import { Hono, type Context } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
 import { rateLimiter } from "hono-rate-limiter";
 import { FoodItem, toFoodItem, type ModelFood } from "./identify-food.js";
@@ -20,7 +20,7 @@ const DEFAULT_RATE_LIMIT: RateLimit = { limit: 10, windowMs: 60 * 60 * 1000 };
 
 export function createApp(deps: {
   vision: FoodVision;
-  rateLimit?: RateLimit;
+  rateLimit?: RateLimit | false;
   corsOrigins?: string[];
 }) {
   const app = new Hono();
@@ -28,13 +28,16 @@ export function createApp(deps: {
 
   app.use("*", cors({ origin: deps.corsOrigins ?? [], allowMethods: ["POST"] }));
 
-  const limitPerClient = rateLimiter({
-    windowMs: rateLimit.windowMs,
-    limit: rateLimit.limit,
-    standardHeaders: "draft-6",
-    keyGenerator: clientIp,
-    message: { error: "too many requests" },
-  });
+  const limitPerClient: MiddlewareHandler =
+    rateLimit === false
+      ? (_c, next) => next()
+      : rateLimiter({
+          windowMs: rateLimit.windowMs,
+          limit: rateLimit.limit,
+          standardHeaders: "draft-6",
+          keyGenerator: clientIp,
+          message: { error: "too many requests" },
+        });
 
   app.post("/identify", limitPerClient, async (c) => {
     const body = await c.req.parseBody();
