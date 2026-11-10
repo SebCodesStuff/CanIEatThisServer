@@ -5,14 +5,14 @@ import { createApp, type FoodVision } from "./app.js";
 import { createGeminiClient } from "./gemini-client.js";
 
 const DEFAULT_MODEL = "gemini-3.5-flash-lite";
-const HOSTNAME = "127.0.0.1" as const;
+const DEFAULT_HOSTNAME = "127.0.0.1";
 const DEFAULT_RATE_LIMIT_PER_HOUR = 10;
 
 export type ServerConfig = {
   apiKey: string;
   model: string;
   port: number;
-  hostname: typeof HOSTNAME;
+  hostname: string;
   rateLimitPerHour: number;
   rateLimitEnabled: boolean;
   corsOrigins: string[];
@@ -45,7 +45,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): ServerConfig {
     apiKey,
     model: env.GEMINI_MODEL?.trim() || DEFAULT_MODEL,
     port,
-    hostname: HOSTNAME,
+    hostname: env.HOST?.trim() || DEFAULT_HOSTNAME,
     rateLimitPerHour,
     rateLimitEnabled: env.MODE !== "DEV",
     corsOrigins,
@@ -54,6 +54,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): ServerConfig {
 
 export function startServer(options: {
   port: number;
+  hostname?: string;
   vision: FoodVision;
   rateLimitPerHour?: number;
   rateLimitEnabled?: boolean;
@@ -78,7 +79,7 @@ export function startServer(options: {
     const server = serve(
       {
         fetch: app.fetch,
-        hostname: HOSTNAME,
+        hostname: options.hostname ?? DEFAULT_HOSTNAME,
         port: options.port,
       },
       (info) => {
@@ -121,6 +122,7 @@ if (isDirectRun()) {
   const vision = createGeminiClient({ apiKey: config.apiKey, model: config.model });
   startServer({
     port: config.port,
+    hostname: config.hostname,
     vision,
     rateLimitPerHour: config.rateLimitPerHour,
     rateLimitEnabled: config.rateLimitEnabled,

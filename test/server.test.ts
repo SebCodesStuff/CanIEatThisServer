@@ -56,7 +56,11 @@ describe("server config", () => {
     );
   });
 
-  test("listens on 127.0.0.1", async () => {
+  test("reads the bind host from HOST so a container can listen on all interfaces", () => {
+    expect(loadConfig({ GEMINI_API_KEY: "key", HOST: " 0.0.0.0 " }).hostname).toBe("0.0.0.0");
+  });
+
+  test("listens on 127.0.0.1 by default", async () => {
     const running = await startServer({
       port: 0,
       vision: {
@@ -71,6 +75,24 @@ describe("server config", () => {
 
     expect(running.hostname).toBe("127.0.0.1");
     expect(running.port).toBeGreaterThan(0);
+    await running.close();
+  });
+
+  test("listens on the configured host", async () => {
+    const running = await startServer({
+      port: 0,
+      hostname: "0.0.0.0",
+      vision: {
+        async identify() {
+          return { foods: [] };
+        },
+        async calories() {
+          return [];
+        },
+      },
+    });
+
+    expect(running.hostname).toBe("0.0.0.0");
     await running.close();
   });
 });
