@@ -6,28 +6,43 @@ describe("server config", () => {
     expect(() => loadConfig({})).toThrow(/GEMINI_API_KEY/);
   });
 
-  test("defaults the model, port, and loopback host", () => {
+  test("defaults the model, port, loopback host, rate limit, and CORS origins", () => {
     expect(loadConfig({ GEMINI_API_KEY: "key" })).toEqual({
       apiKey: "key",
       model: "gemini-3.5-flash-lite",
       port: 3000,
       hostname: "127.0.0.1",
+      rateLimitPerHour: 10,
+      corsOrigins: [],
     });
   });
 
-  test("reads the model and port from the environment", () => {
+  test("reads the model, port, rate limit, and CORS origins from the environment", () => {
     expect(
       loadConfig({
         GEMINI_API_KEY: "key",
         GEMINI_MODEL: "gemini-3.8-flash",
         PORT: "4010",
+        RATE_LIMIT_PER_HOUR: "25",
+        CORS_ORIGINS: " https://sebastian.dev, http://localhost:5173 ,",
       }),
     ).toEqual({
       apiKey: "key",
       model: "gemini-3.8-flash",
       port: 4010,
       hostname: "127.0.0.1",
+      rateLimitPerHour: 25,
+      corsOrigins: ["https://sebastian.dev", "http://localhost:5173"],
     });
+  });
+
+  test("rejects a rate limit that is not a positive integer", () => {
+    expect(() => loadConfig({ GEMINI_API_KEY: "key", RATE_LIMIT_PER_HOUR: "0" })).toThrow(
+      /RATE_LIMIT_PER_HOUR/,
+    );
+    expect(() => loadConfig({ GEMINI_API_KEY: "key", RATE_LIMIT_PER_HOUR: "abc" })).toThrow(
+      /RATE_LIMIT_PER_HOUR/,
+    );
   });
 
   test("listens on 127.0.0.1", async () => {
